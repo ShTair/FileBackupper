@@ -463,6 +463,8 @@ namespace FileBackupper
             }
         }
 
+        #region initialize
+
         private static bool CheckParamater(string path)
         {
             if (path == null || !File.Exists(path))
@@ -559,6 +561,8 @@ namespace FileBackupper
 
             return true;
         }
+
+        #endregion
 
         private static bool FirstStore(BackupContext context, Target target, DirectoryInfo pdir)
         {
@@ -700,28 +704,6 @@ namespace FileBackupper
             return true;
         }
 
-        private static IEnumerable<KeyValuePair<string, FileInfo>> GetFiles(DirectoryInfo pdir, string bpath)
-        {
-            foreach (var dir in pdir.GetDirectories())
-            {
-                var name = dir.Name;
-                var bp = Path.Combine(bpath, name);
-
-                foreach (var file in GetFiles(dir, bp))
-                {
-                    yield return file;
-                }
-            }
-
-            foreach (var file in pdir.GetFiles())
-            {
-                var name = file.Name;
-                var bp = Path.Combine(bpath, name);
-
-                yield return new KeyValuePair<string, FileInfo>(bp, file);
-            }
-        }
-
         private static IEnumerable<IEnumerable<KeyValuePair<string, FileInfo>>> Sample(IEnumerable<KeyValuePair<string, FileInfo>> src, int max)
         {
             var e = src.GetEnumerator();
@@ -747,6 +729,32 @@ namespace FileBackupper
         {
             // check
         }
+
+        #region utils
+
+        private static IEnumerable<KeyValuePair<string, FileInfo>> GetFiles(DirectoryInfo pdir, string bpath)
+        {
+            foreach (var dir in pdir.GetDirectories())
+            {
+                var name = dir.Name;
+                var bp = Path.Combine(bpath, name);
+
+                foreach (var file in GetFiles(dir, bp))
+                {
+                    yield return file;
+                }
+            }
+
+            foreach (var file in pdir.GetFiles())
+            {
+                var name = file.Name;
+                var bp = Path.Combine(bpath, name);
+
+                yield return new KeyValuePair<string, FileInfo>(bp, file);
+            }
+        }
+
+        #endregion
     }
 
     static class Extensions
