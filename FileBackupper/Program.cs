@@ -19,6 +19,7 @@ namespace FileBackupper
 
         private static List<string> _vaults = new List<string>();
         private static List<string> _errSubVaults = new List<string>();
+        private static string _logPath;
 
         private static M.LogItem _log = new M.LogItem
         {
@@ -29,10 +30,8 @@ namespace FileBackupper
             LostItems = new List<string>(),
         };
 
-        private static Dictionary<string, PathInfo> _tempInfo;
-        private static List<PathInfo> _udInfo;
-
-        private static string _logPath;
+        private static Dictionary<string, PathInfo> _oldPathInfos;
+        private static List<PathInfo> _updatedPathInfos;
 
         static void Main(string[] args)
         {
@@ -41,11 +40,11 @@ namespace FileBackupper
                 _log.Start = DateTime.Now;
                 _md5 = MD5.Create();
 
-                var dds = _vaults.Select(vp => Path.Combine(vp, "Log")).ToList();
-                dds.ForEach(dd => Directory.CreateDirectory(dd));
+                var vaultLogPaths = _vaults.Select(vp => Path.Combine(vp, "Log")).ToList();
+                vaultLogPaths.ForEach(dd => Directory.CreateDirectory(dd));
 
-                var dbn = Path.Combine(_logPath = dds[0], "db.sdf");
-                using (var context = BackupContext.Create(dbn))
+                var dbPath = Path.Combine(_logPath = vaultLogPaths[0], "db.sdf");
+                using (var context = BackupContext.Create(dbPath))
                 {
                     {
                         // 野良ターゲットの削除
@@ -56,19 +55,20 @@ namespace FileBackupper
                     }
 
                     var shots = new List<Snapshot>();
-                    foreach (var target in _settings.TargetPaths)
+                    foreach (var targetPath in _settings.TargetPaths)
                     {
-                        var tp = (from en in context.Targets
-                                  where en.Path == target
-                                  select en).FirstOrDefault();
+                        var target = (from en in context.Targets
+                                      where en.Path == targetPath
+                                      select en).FirstOrDefault();
 
-                        if (tp == null)
+                        if (target == null)
                         {
-                            tp = new Target { Path = target };
-                            context.Targets.Add(tp);
+                            // ターゲットが存在しなかった場合、生成して初期格納
+                            target = new Target { Path = targetPath };
+                            context.Targets.Add(target);
 
                             context.Configuration.AutoDetectChangesEnabled = false;
-                            if (!FirstStore(context, tp, new DirectoryInfo(target))) return;
+                            if (!FirstStore(context, target, new DirectoryInfo(targetPath))) return;
                             context.Configuration.AutoDetectChangesEnabled = true;
                         }
 
@@ -84,32 +84,34 @@ namespace FileBackupper
                                 () => Console.WriteLine("不明なファイルを削除しています。"),
                                 () => context.SaveChanges());
 
-                            // 最終Snapより新しいPathがあるか
-                            var lasts = (from en in context.Snapshots
-                                         where en.Target.Id == tp.Id
-                                         orderby en.Creation descending
-                                         select en).FirstOrDefault()?.Creation;
+                            // 最終SnapShotより新しいPathがあるか
+                            var lastShot = (from en in context.Snapshots
+                                            where en.Target.Id == target.Id
+                                            orderby en.Creation descending
+                                            select en).FirstOrDefault()?.Creation;
 
-                            if (lasts == null || (from en in context.Paths
-                                                  where en.Target.Id == tp.Id
-                                                  where en.RemoveDate == null
-                                                  where en.RegisterDate > lasts.Value
-                                                  select en).Any())
+                            if (lastShot == null || (from en in context.Paths
+                                                     where en.Target.Id == target.Id
+                                                     where en.RemoveDate == null
+                                                     where en.RegisterDate > lastShot.Value
+                                                     select en).Any())
                             {
-                                var tv1 = (from en in context.Paths
-                                           where en.Target.Id == tp.Id
-                                           where en.RemoveDate == null
-                                           select en).Include(t => t.Item).ToList();
+                                // 最終SnapShotより新しいPathがある場合、同じパスで削除日がnullのものが複数存在する可能性がある。
+                                var notRemovedPaths = (from en in context.Paths
+                                                       where en.Target.Id == target.Id
+                                                       where en.RemoveDate == null
+                                                       select en).Include(t => t.Item).ToList();
 
-                                var tv2 = tv1.GroupBy(t => t.Path)
+                                var errorPaths = notRemovedPaths
+                                    .GroupBy(t => t.Path)
                                     .Where(t => t.Count() > 1)
                                     .Select(t => new { V = t.OrderBy(t2 => t2.RegisterDate).ToList() }).ToList();
 
-                                tv2.ForEach(tv3 =>
+                                errorPaths.ForEach(errorPath =>
                                 {
-                                    for (int i = 0; i < tv3.V.Count - 1; i++)
+                                    for (int i = 0; i < errorPath.V.Count - 1; i++)
                                     {
-                                        tv3.V[i].RemoveDate = tv3.V[i + 1].RegisterDate;
+                                        errorPath.V[i].RemoveDate = errorPath.V[i + 1].RegisterDate;
                                     }
                                 },
                                 () => Console.WriteLine("パスデータを修復しています。"),
@@ -118,31 +120,31 @@ namespace FileBackupper
                         }
 
                         Console.WriteLine("データベースをロードしています。");
-                        _tempInfo = (from en in context.Paths
-                                     where en.Target.Id == tp.Id
-                                     where en.RemoveDate == null
-                                     select en).Include(t => t.Item).ToDictionary(t => t.Path);
+                        _oldPathInfos = (from en in context.Paths
+                                         where en.Target.Id == target.Id
+                                         where en.RemoveDate == null
+                                         select en).Include(t => t.Item).ToDictionary(t => t.Path);
 
-                        _udInfo = new List<PathInfo>();
+                        _updatedPathInfos = new List<PathInfo>();
 
                         context.Configuration.AutoDetectChangesEnabled = false;
                         _log.ItemCount--; // ルートディレクトリ分マイナス
-                        Check(context, tp, new DirectoryInfo(target), null, "");
+                        Check(context, target, new DirectoryInfo(targetPath), null, "");
                         context.SaveChanges();
                         context.Configuration.AutoDetectChangesEnabled = true;
 
-                        foreach (var ti in _tempInfo)
+                        foreach (var ti in _oldPathInfos)
                         {
                             ti.Value.RemoveDate = _log.Start;
                             _log.LostItems.Add(ti.Value.Path);
                         }
-                        foreach (var ti in _udInfo)
+                        foreach (var ti in _updatedPathInfos)
                         {
                             ti.RemoveDate = _log.Start;
                         }
                         context.SaveChanges();
 
-                        var snapshot = new Snapshot { Creation = DateTime.Now, Target = tp };
+                        var snapshot = new Snapshot { Creation = DateTime.Now, Target = target };
                         context.Snapshots.Add(snapshot);
                         shots.Add(snapshot);
                         context.SaveChanges();
@@ -171,7 +173,7 @@ namespace FileBackupper
                         }
 
                         var json = JsonConvert.SerializeObject(mss);
-                        dds.Select(dd => Path.Combine(dd, $"{_log.Start:yyyyMMddHHmmss}.json")).ForEach(logn =>
+                        vaultLogPaths.Select(dd => Path.Combine(dd, $"{_log.Start:yyyyMMddHHmmss}.json")).ForEach(logn =>
                         {
                             File.WriteAllText(logn, json);
                         });
@@ -247,7 +249,7 @@ namespace FileBackupper
                         _log.Finish = DateTime.Now;
 
                         var json = JsonConvert.SerializeObject(_log, Formatting.Indented);
-                        dds.Select(dd => Path.Combine(dd, $"{_log.Start:yyyyMMddHHmmss}_log.json")).ForEach(logn =>
+                        vaultLogPaths.Select(dd => Path.Combine(dd, $"{_log.Start:yyyyMMddHHmmss}_log.json")).ForEach(logn =>
                         {
                             File.WriteAllText(logn, json);
                         });
@@ -338,9 +340,9 @@ namespace FileBackupper
                     var key = (parent?.Id ?? 0) + "\\" + name;
 
                     PathInfo pi;
-                    if (_tempInfo.TryGetValue(key, out pi) && pi.Item == null)
+                    if (_oldPathInfos.TryGetValue(key, out pi) && pi.Item == null)
                     {
-                        _tempInfo.Remove(key);
+                        _oldPathInfos.Remove(key);
 
                         if (pi.Creation == pc && pi.LastWrite == pm)
                         {
@@ -350,7 +352,7 @@ namespace FileBackupper
                         else
                         {
                             // update
-                            _udInfo.Add(pi);
+                            _updatedPathInfos.Add(pi);
 
                             var pd = new PathInfo
                             {
@@ -403,9 +405,9 @@ namespace FileBackupper
 
                     PathInfo pi;
                     var existsList = false;
-                    if (_tempInfo.TryGetValue(key, out pi) && pi.Item != null)
+                    if (_oldPathInfos.TryGetValue(key, out pi) && pi.Item != null)
                     {
-                        _tempInfo.Remove(key);
+                        _oldPathInfos.Remove(key);
 
                         if (pi.Creation == pc && pi.LastWrite == pm && pi.Item.Size == ps)
                         {
@@ -415,7 +417,7 @@ namespace FileBackupper
                             continue;
                         }
 
-                        _udInfo.Add(pi);
+                        _updatedPathInfos.Add(pi);
                         existsList = true;
                     }
 
