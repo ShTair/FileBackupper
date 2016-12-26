@@ -63,13 +63,9 @@ namespace FileBackupper
 
                         if (target == null)
                         {
-                            // ターゲットが存在しなかった場合、生成して初期格納
+                            // ターゲットが存在しなかった場合生成
                             target = new Target { Path = targetPath };
                             context.Targets.Add(target);
-
-                            context.Configuration.AutoDetectChangesEnabled = false;
-                            if (!FirstStore(context, target, new DirectoryInfo(targetPath))) return;
-                            context.Configuration.AutoDetectChangesEnabled = true;
                         }
 
                         {
@@ -127,20 +123,22 @@ namespace FileBackupper
 
                         _updatedPathInfos = new List<PathInfo>();
 
+                        // チェック
                         context.Configuration.AutoDetectChangesEnabled = false;
                         _log.ItemCount--; // ルートディレクトリ分マイナス
                         Check(context, target, new DirectoryInfo(targetPath), null, "");
                         context.SaveChanges();
                         context.Configuration.AutoDetectChangesEnabled = true;
 
-                        foreach (var ti in _oldPathInfos)
+                        foreach (var notFoundPath in _oldPathInfos)
                         {
-                            ti.Value.RemoveDate = _log.Start;
-                            _log.LostItems.Add(ti.Value.Path);
+                            notFoundPath.Value.RemoveDate = _log.Start;
+                            _log.LostItems.Add(notFoundPath.Value.Path);
                         }
-                        foreach (var ti in _updatedPathInfos)
+
+                        foreach (var updatedPath in _updatedPathInfos)
                         {
-                            ti.RemoveDate = _log.Start;
+                            updatedPath.RemoveDate = _log.Start;
                         }
                         context.SaveChanges();
 
@@ -587,146 +585,6 @@ namespace FileBackupper
 
         #endregion
 
-        private static bool FirstStore(BackupContext context, Target target, DirectoryInfo pdir)
-        {
-            Console.WriteLine("新しいターゲットです。初期格納を実行します。");
-            var tfp = Path.Combine(_logPath, "Temp");
-            int count = 0;
-
-            foreach (var item1 in Sample(GetFiles(pdir, ""), 10000))
-            {
-                if (Directory.Exists(tfp))
-                {
-                    Console.WriteLine("一時格納フォルダが存在します。古い一時格納フォルダの名前を変更します。");
-                    var cdt = Directory.GetCreationTime(tfp);
-                    Directory.Move(tfp, Path.Combine(_logPath, $"Temp_{cdt:yyyyMMddHHmmss}"));
-                }
-
-                var tps = new List<M.TempPath>();
-
-                foreach (var item in item1)
-                {
-                    try
-                    {
-                        Console.WriteLine($"{count} {item.Value.FullName}");
-                        var dir = Path.Combine(tfp, (count % 100).ToString("00"), (count % 10000).ToString("0000"));
-                        Directory.CreateDirectory(dir);
-                        var path = Path.Combine(dir, count.ToString());
-                        item.Value.CopyTo(path);
-                        tps.Add(new M.TempPath
-                        {
-                            Id = count,
-                            OPath = item.Value.FullName,
-                            VPath = path,
-                            BPath = item.Key,
-                            File = item.Value,
-                        });
-
-                        count++;
-                    }
-                    catch { }
-                }
-
-                foreach (var tp in tps)
-                {
-                    tp.Md5 = CalculateMd5(tp.VPath);
-                    tp.Md5Str = WriteRemoveAll(tp.Md5);
-                    Console.WriteLine($"{tp.Id} {tp.Md5Str}");
-                }
-
-                Console.WriteLine("ファイルデータを生成しています。");
-                var iis = context.Items.Where(t => t.Md5 != null).AsEnumerable().ToDictionary(t =>
-                {
-                    Console.WriteLine($"{t.Md5} {t.Paths}");
-                    return WriteRemoveAll(t.Md5);
-                });
-                var ps = tps.GroupBy(t => t.Md5Str).ToDictionary(t => t.Key, t => t.ToList());
-
-                var niis = new List<Tuple<M.TempPath, ItemInfo>>();
-
-                foreach (var g in ps)
-                {
-                    ItemInfo ii;
-                    if (!iis.TryGetValue(g.Key, out ii))
-                    {
-                        context.Items.Add(ii = new ItemInfo { Md5 = g.Value[0].Md5, Size = g.Value[0].File.Length });
-                        niis.Add(new Tuple<M.TempPath, ItemInfo>(g.Value[0], ii));
-                    }
-
-                    g.Value.ForEach(t => t.Item = ii);
-                }
-
-                Console.WriteLine("データベースに書き込んでいます。（1/2）");
-                context.SaveChanges();
-
-                {
-                    Console.WriteLine($"ファイルを格納しています。");
-                    var ve = _vaults.GetEnumerator();
-                    ve.MoveNext();
-                    var ve0 = ve.Current;
-                    Console.WriteLine();
-                    var icount = 0;
-                    foreach (var ii in niis)
-                    {
-                        Console.CursorTop--;
-                        Console.WriteLine($"{++icount}/{niis.Count}");
-                        var dir = Path.Combine(ve.Current, "Data", (ii.Item2.Id % 100).ToString("00"), (ii.Item2.Id % 10000).ToString("0000"));
-                        Directory.CreateDirectory(dir);
-                        var path = Path.Combine(dir, ii.Item2.Id.ToString());
-                        File.Move(ii.Item1.VPath, path);
-                    }
-
-                    while (ve.MoveNext())
-                    {
-                        Console.WriteLine($"ファイルをサブ領域に格納しています。");
-                        Console.WriteLine($"{ve.Current}");
-                        Console.WriteLine();
-                        icount = 0;
-                        foreach (var ii in niis)
-                        {
-                            Console.CursorTop--;
-                            Console.WriteLine($"{++icount}/{niis.Count}");
-                            var dir = Path.Combine(ve.Current, "Data", (ii.Item2.Id % 100).ToString("00"), (ii.Item2.Id % 10000).ToString("0000"));
-                            Directory.CreateDirectory(dir);
-                            var path = Path.Combine(dir, ii.Item2.Id.ToString());
-
-                            var ve0p = Path.Combine(ve0, "Data", (ii.Item2.Id % 100).ToString("00"), (ii.Item2.Id % 10000).ToString("0000"), ii.Item2.Id.ToString());
-
-                            File.Copy(ve0p, path);
-                        }
-                    }
-                }
-
-                Console.WriteLine("パスデータを生成しています。");
-                foreach (var g in ps)
-                {
-                    foreach (var p in g.Value)
-                    {
-                        context.Paths.Add(new PathInfo
-                        {
-                            Path = p.BPath,
-                            Target = target,
-                            Item = p.Item,
-                            Creation = p.File.CreationTimeUtc.ToBinary(),
-                            LastWrite = p.File.LastWriteTimeUtc.ToBinary(),
-                            RegisterDate = _log.Start,
-                        });
-                    }
-                }
-                Console.WriteLine("データベースに書き込んでいます。（2/2）");
-                context.SaveChanges();
-
-                Console.WriteLine("一時ファイルを削除しています。");
-                try
-                {
-                    Directory.Delete(tfp, true);
-                }
-                catch { }
-            }
-
-            return true;
-        }
-
         private static IEnumerable<IEnumerable<KeyValuePair<string, FileInfo>>> Sample(IEnumerable<KeyValuePair<string, FileInfo>> src, int max)
         {
             var e = src.GetEnumerator();
@@ -747,37 +605,6 @@ namespace FileBackupper
             }
             while (e.MoveNext());
         }
-
-        private static void CheckValutFiles(BackupContext context)
-        {
-            // check
-        }
-
-        #region utils
-
-        private static IEnumerable<KeyValuePair<string, FileInfo>> GetFiles(DirectoryInfo pdir, string bpath)
-        {
-            foreach (var dir in pdir.GetDirectories())
-            {
-                var name = dir.Name;
-                var bp = Path.Combine(bpath, name);
-
-                foreach (var file in GetFiles(dir, bp))
-                {
-                    yield return file;
-                }
-            }
-
-            foreach (var file in pdir.GetFiles())
-            {
-                var name = file.Name;
-                var bp = Path.Combine(bpath, name);
-
-                yield return new KeyValuePair<string, FileInfo>(bp, file);
-            }
-        }
-
-        #endregion
     }
 
     static class Extensions

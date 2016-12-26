@@ -71,7 +71,6 @@
     <Compile Include="Db\PathInfo.cs" />
     <Compile Include="Db\Snapshot.cs" />
     <Compile Include="Db\Target.cs" />
-    <Compile Include="FileChangeChecker.cs" />
     <Compile Include="Models\LogItem.cs" />
     <Compile Include="Models\PathInfo.cs" />
     <Compile Include="Models\Snapshot.cs" />
