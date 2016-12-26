@@ -386,51 +386,51 @@ namespace FileBackupper
                 }
             }
 
-            foreach (var file in pdir.GetFiles())
+            foreach (var info in dir.GetFiles())
             {
                 try
                 {
                     _log.FileCount++;
 
-                    var name = file.Name;
-                    var bp = Path.Combine(bpath, name);
+                    var name = info.Name;
+                    var bp = Path.Combine(ap, name);
+                    var pc = info.CreationTimeUtc.ToBinary();
+                    var pm = info.LastWriteTimeUtc.ToBinary();
+                    var ps = info.Length;
+                    var key = parent.Id + "\\" + name;
 
-                    var pc = file.CreationTimeUtc.ToBinary();
-                    var pm = file.LastWriteTimeUtc.ToBinary();
-                    var ps = file.Length;
-
-
-                    PathInfo tpi;
+                    PathInfo pi;
                     var existsList = false;
-                    if (_tempInfo.TryGetValue(bp, out tpi) && tpi.Item != null)
+                    if (_tempInfo.TryGetValue(key, out pi) && pi.Item != null)
                     {
-                        _tempInfo.Remove(bp);
-                        if (tpi.Creation == pc && tpi.LastWrite == pm && tpi.Item.Size == ps)
+                        _tempInfo.Remove(key);
+
+                        if (pi.Creation == pc && pi.LastWrite == pm && pi.Item.Size == ps)
                         {
-                            Console.WriteLine($"{++_log.ItemCount} Z {WriteRemove(tpi.Item.Md5)} {bp}");
+                            // 完全に同一
+                            Console.WriteLine($"{++_log.ItemCount} Z {WriteRemove(pi.Item.Md5)} {bp}");
                             _log.SameItemCount++;
                             continue;
                         }
 
-                        _udInfo.Add(tpi);
+                        _udInfo.Add(pi);
                         existsList = true;
                     }
 
-                    var md5 = CalculateMd5(file.FullName);
-                    var size = file.Length;
+                    var md5 = CalculateMd5(info.FullName);
 
                     context.SaveChanges();
                     var ii = (from en in context.Items
                               where en.Md5 == md5
-                              where en.Size == size
+                              where en.Size == ps
                               select en).FirstOrDefault();
 
                     if (ii == null)
                     {
-                        ii = new ItemInfo { Md5 = md5, Size = size };
+                        ii = new ItemInfo { Md5 = md5, Size = ps };
                         context.Items.Add(ii);
                         context.SaveChanges();
-                        Copy(file.FullName, ii.Id);
+                        Copy(info.FullName, ii.Id);
                         Console.WriteLine($"{++_log.ItemCount} C {WriteRemove(ii.Md5)} {bp}");
                         if (existsList) _log.UpdatedItems.Add(bp);
                         else _log.NewItems.Add(bp);
@@ -443,7 +443,7 @@ namespace FileBackupper
 
                     var pd = new PathInfo
                     {
-                        Path = bp,
+                        Directory = parent,
                         Target = target,
                         Item = ii,
                         Creation = pc,
@@ -454,7 +454,7 @@ namespace FileBackupper
                 }
                 catch (Exception exp)
                 {
-                    Console.WriteLine($"E {file}");
+                    Console.WriteLine($"E {info.FullName}");
                     Console.WriteLine(exp);
                     _log.Exceptions.Add(exp.ToString());
                 }
