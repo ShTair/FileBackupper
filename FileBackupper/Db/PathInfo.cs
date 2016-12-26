@@ -13,10 +13,10 @@ namespace FileBackupper.Db
         [Index]
         public string Name { get; set; }
 
-        public PathInfo Directory { get; set; }
+        public PathInfo Parent { get; set; }
 
-        [ForeignKey("Path")]
-        public int? DirectoryId { get; set; }
+        [ForeignKey("Parent")]
+        public int? ParentId { get; set; }
 
         public ICollection<PathInfo> Children { get; set; }
 
@@ -36,6 +36,6 @@ namespace FileBackupper.Db
         public DateTime? RemoveDate { get; set; }
 
         [NotMapped]
-        public string Path => DirectoryId + "\\" + Name;
+        public string Path => ParentId + "\\" + Name;
     }
 }

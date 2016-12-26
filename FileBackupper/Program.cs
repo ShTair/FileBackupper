@@ -66,6 +66,7 @@ namespace FileBackupper
                             // ターゲットが存在しなかった場合生成
                             target = new Target { Path = targetPath };
                             context.Targets.Add(target);
+                            context.SaveChanges();
                         }
 
                         {
@@ -116,6 +117,13 @@ namespace FileBackupper
                         }
 
                         Console.WriteLine("データベースをロードしています。");
+
+                        var tp = (from en in context.Paths
+                                  where en.Target.Id == target.Id
+                                  where en.RemoveDate == null
+                                  where en.Parent == null
+                                  select en).Include(t => t.Item).ToList();
+
                         _oldPathInfos = (from en in context.Paths
                                          where en.Target.Id == target.Id
                                          where en.RemoveDate == null
@@ -160,7 +168,7 @@ namespace FileBackupper
                             ms.Paths = (from en in context.Paths
                                         where en.Target.Id == shot.Target.Id
                                         where en.RemoveDate == null
-                                        select new M.PathInfo
+                                        select en).ToList().Select(en => new M.PathInfo
                                         {
                                             Id = en.Item == null ? (int?)null : en.Item.Id,
                                             Path = en.Path,
@@ -352,30 +360,34 @@ namespace FileBackupper
                             // update
                             _updatedPathInfos.Add(pi);
 
-                            var pd = new PathInfo
+                            pi = new PathInfo
                             {
-                                Directory = parent,
+                                Parent = parent,
+                                Name = name,
                                 Target = target,
                                 Creation = pc,
                                 LastWrite = pm,
                                 RegisterDate = _log.Start
                             };
-                            context.Paths.Add(pd);
+                            context.Paths.Add(pi);
+                            context.SaveChanges();
                             _log.UpdatedItems.Add(bp);
                         }
                     }
                     else
                     {
                         // 新しい
-                        var pd = new PathInfo
+                        pi = new PathInfo
                         {
-                            Directory = parent,
+                            Parent = parent,
+                            Name = name,
                             Target = target,
                             Creation = pc,
                             LastWrite = pm,
                             RegisterDate = _log.Start
                         };
-                        context.Paths.Add(pd);
+                        context.Paths.Add(pi);
+                        context.SaveChanges();
                         _log.NewItems.Add(bp);
                     }
 
@@ -445,7 +457,8 @@ namespace FileBackupper
 
                     var pd = new PathInfo
                     {
-                        Directory = parent,
+                        Parent = parent,
+                        Name = name,
                         Target = target,
                         Item = ii,
                         Creation = pc,
