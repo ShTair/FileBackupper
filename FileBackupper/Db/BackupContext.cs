@@ -17,6 +17,7 @@ namespace FileBackupper.Db
             modelBuilder.Entity<Snapshot>().HasRequired(t => t.Target).WithMany(t => t.Snapshots);
             modelBuilder.Entity<PathInfo>().HasRequired(t => t.Target).WithMany(t => t.Paths);
             modelBuilder.Entity<PathInfo>().HasOptional(t => t.Item).WithMany(t => t.Paths);
+            modelBuilder.Entity<PathInfo>().HasOptional(t => t.Directory).WithMany(t => t.Children);
         }
 
         public DbSet<Target> Targets { get; set; }

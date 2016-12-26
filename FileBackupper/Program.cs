@@ -100,9 +100,11 @@ namespace FileBackupper
                                            where en.Target.Id == tp.Id
                                            where en.RemoveDate == null
                                            select en).Include(t => t.Item).ToList();
+
                                 var tv2 = tv1.GroupBy(t => t.Path)
                                     .Where(t => t.Count() > 1)
                                     .Select(t => new { V = t.OrderBy(t2 => t2.RegisterDate).ToList() }).ToList();
+
                                 tv2.ForEach(tv3 =>
                                 {
                                     for (int i = 0; i < tv3.V.Count - 1; i++)
@@ -125,7 +127,7 @@ namespace FileBackupper
 
                         context.Configuration.AutoDetectChangesEnabled = false;
                         _log.ItemCount--; // ルートディレクトリ分マイナス
-                        Check(context, tp, new DirectoryInfo(target), "");
+                        Check(context, tp, new DirectoryInfo(target), null, "");
                         context.SaveChanges();
                         context.Configuration.AutoDetectChangesEnabled = true;
 
@@ -333,7 +335,7 @@ namespace FileBackupper
                     var bp = Path.Combine(ap, name);
                     var pc = info.CreationTimeUtc.ToBinary();
                     var pm = info.LastWriteTimeUtc.ToBinary();
-                    var key = parent.Id + "\\" + name;
+                    var key = (parent?.Id ?? 0) + "\\" + name;
 
                     PathInfo pi;
                     if (_tempInfo.TryGetValue(key, out pi) && pi.Item == null)
@@ -397,7 +399,7 @@ namespace FileBackupper
                     var pc = info.CreationTimeUtc.ToBinary();
                     var pm = info.LastWriteTimeUtc.ToBinary();
                     var ps = info.Length;
-                    var key = parent.Id + "\\" + name;
+                    var key = (parent?.Id ?? 0) + "\\" + name;
 
                     PathInfo pi;
                     var existsList = false;

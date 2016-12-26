@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations.Schema;
 
 namespace FileBackupper.Db
@@ -15,7 +16,9 @@ namespace FileBackupper.Db
         public PathInfo Directory { get; set; }
 
         [ForeignKey("Path")]
-        public int DirectoryId { get; set; }
+        public int? DirectoryId { get; set; }
+
+        public ICollection<PathInfo> Children { get; set; }
 
         /// <summary>
         /// Itemがnullならディレクトリ
@@ -31,5 +34,8 @@ namespace FileBackupper.Db
 
         [Index]
         public DateTime? RemoveDate { get; set; }
+
+        [NotMapped]
+        public string Path => DirectoryId + "\\" + Name;
     }
 }
