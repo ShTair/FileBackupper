@@ -12,10 +12,10 @@ namespace FileBackupper.Db
         [Index]
         public string Name { get; set; }
 
-        public PathInfo Path { get; set; }
+        public PathInfo Directory { get; set; }
 
         [ForeignKey("Path")]
-        public int PathId { get; set; }
+        public int DirectoryId { get; set; }
 
         /// <summary>
         /// Itemがnullならディレクトリ

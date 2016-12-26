@@ -321,32 +321,43 @@ namespace FileBackupper
             }
         }
 
-        private static void Check(BackupContext context, Target target, DirectoryInfo pdir, string bpath)
+        private static void Check(BackupContext context, Target target, DirectoryInfo dir, PathInfo parent, string ap)
         {
-            Console.WriteLine($"{++_log.ItemCount} D        {bpath}");
-            foreach (var dir in pdir.GetDirectories())
+            Console.WriteLine($"{++_log.ItemCount} D        {ap}");
+
+            foreach (var info in dir.GetDirectories())
             {
-                var name = dir.Name;
-                var bp = Path.Combine(bpath, name);
                 try
                 {
-                    var pc = dir.CreationTimeUtc.ToBinary();
-                    var pm = dir.LastWriteTimeUtc.ToBinary();
+                    var name = info.Name;
+                    var bp = Path.Combine(ap, name);
+                    var pc = info.CreationTimeUtc.ToBinary();
+                    var pm = info.LastWriteTimeUtc.ToBinary();
+                    var key = parent.Id + "\\" + name;
 
-                    PathInfo tpi;
-                    if (_tempInfo.TryGetValue(bp, out tpi) && tpi.Item == null)
+                    PathInfo pi;
+                    if (_tempInfo.TryGetValue(key, out pi) && pi.Item == null)
                     {
-                        _tempInfo.Remove(bp);
-                        if (tpi.Creation == pc && tpi.LastWrite == pm)
+                        _tempInfo.Remove(key);
+
+                        if (pi.Creation == pc && pi.LastWrite == pm)
                         {
                             // 完全に同一
                             _log.SameItemCount++;
                         }
                         else
                         {
-                            _udInfo.Add(tpi);
-                            // 更新（日付だけ違う）
-                            var pd = new PathInfo { Path = bp, Target = target, Creation = pc, LastWrite = pm, RegisterDate = _log.Start };
+                            // update
+                            _udInfo.Add(pi);
+
+                            var pd = new PathInfo
+                            {
+                                Directory = parent,
+                                Target = target,
+                                Creation = pc,
+                                LastWrite = pm,
+                                RegisterDate = _log.Start
+                            };
                             context.Paths.Add(pd);
                             _log.UpdatedItems.Add(bp);
                         }
@@ -354,11 +365,19 @@ namespace FileBackupper
                     else
                     {
                         // 新しい
-                        var pd = new PathInfo { Path = bp, Target = target, Creation = pc, LastWrite = pm, RegisterDate = _log.Start };
+                        var pd = new PathInfo
+                        {
+                            Directory = parent,
+                            Target = target,
+                            Creation = pc,
+                            LastWrite = pm,
+                            RegisterDate = _log.Start
+                        };
                         context.Paths.Add(pd);
                         _log.NewItems.Add(bp);
                     }
-                    Check(context, target, dir, bp);
+
+                    Check(context, target, info, pi, bp);
                 }
                 catch (Exception exp)
                 {
