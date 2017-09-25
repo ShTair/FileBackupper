@@ -1,0 +1,35 @@
+object SnapShot1
+object SnapShot2
+object SnapShot3
+
+object Path1
+object Path2
+object Path3
+object Path4
+object Path5
+
+object File1
+object File2
+object File3
+
+SnapShot1 o- SnapShot2
+SnapShot2 o- SnapShot3
+
+SnapShot1 --o Path1
+SnapShot1 --o Path2
+SnapShot1 --o Path3
+
+SnapShot2 --o Path1
+SnapShot2 --o Path3
+SnapShot2 --o Path4
+
+SnapShot3 --o Path1
+SnapShot3 --o Path3
+SnapShot3 --o Path4
+SnapShot3 --o Path5
+
+Path1 --o File1
+Path2 --o File2
+Path3 --o File3
+Path4 --o File2
+Path5 --o File3
